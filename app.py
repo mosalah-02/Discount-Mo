@@ -18,31 +18,39 @@ if uploaded_file is not None:
             if t:
                 full_text += t + "\n"
 
-        # 1. استخراج التواريخ
-        dates = re.findall(r'\b\d{2}-\d{2}-\d{4}\b', full_text)
+        # 1. استخراج التواريخ وترتيبها تصاعدياً (من القديم إلى الجديد)
+        raw_dates = re.findall(r'\b\d{2}-\d{2}-\d{4}\b', full_text)
         period_str = ""
-        if len(dates) >= 2:
-            period_str = f"فترة من {dates[0]} حتى {dates[1]}"
-        elif len(dates) == 1:
-            period_str = f"بتاريخ {dates[0]}"
+        if len(raw_dates) >= 2:
+            unique_dates = list(set(raw_dates))
+            unique_dates.sort(key=lambda d: [int(x) for x in d.split('-')[::-1]])
+            period_str = f"فترة من {unique_dates[0]} حتى {unique_dates[-1]}"
+        elif len(raw_dates) == 1:
+            period_str = f"بتاريخ {raw_dates[0]}"
 
-        # 2. استخراج أسطر البيان التفصيلي
+        # 2. التخطي المباشر للبيان المختصر والبدء فقط من "البيان التفصيلي"
+        details_lines = []
         lines = full_text.split('\n')
-        details = []
         capture = False
-        
+
         for line in lines:
             clean = line.strip()
+            
+            # بدء التجميع فقط بعد العثور على عنوان البيان التفصيلي
             if "البيان التفصيلي" in clean or "جرامات × نسبة" in clean:
                 capture = True
                 continue
+            
             if capture:
-                if "توزيع الخصم" in clean or "الإجمالي" in clean or "صفحة" in clean:
+                # التوقف فور الوصول لجدول توزيع الخصم أو نهاية الصفحة
+                if "توزيع الخصم" in clean or "الإجمالي" in clean or "توقيع" in clean:
                     break
-                if clean and not clean.startswith("1") and not clean.startswith("2"):
-                    details.append(clean)
+                # استبعاد الأرقام الفردية (رقم الصفحة أو السطر) والأسطر الفارغة
+                if clean and not clean.isdigit():
+                    details_lines.append(clean)
 
-        combined = " و".join(details)
+        # دمج الأسطر وتنظيف الصيغة
+        combined = " و".join(details_lines)
         combined = combined.replace(" × ", "*").replace(" جم", "").replace(" ج", "ج")
 
         final_result = f"{combined} {period_str}".strip()
@@ -52,4 +60,4 @@ if uploaded_file is not None:
         st.success("اضغط على آيقونة النسخ (📋) بالزاوية العلوية لمربع النص أعلاه لنسخه مباشرة.")
 
     except Exception as e:
-        st.error("حدث خطأ أثناء قراءة الملف، يرجى التاكد من رفع ملف PDF صحيح.")
+        st.error("حدث خطأ أثناء قراءة الملف، يرجى التأكد من رفع ملف PDF صحيح.")
