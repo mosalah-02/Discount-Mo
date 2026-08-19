@@ -1,5 +1,5 @@
 import streamlit as st
-import pypdf
+import pdfplumber
 import re
 
 st.set_page_config(page_title="استخراج قيد الخصومات")
@@ -11,14 +11,15 @@ uploaded_file = st.file_uploader("اختر ملف الـ PDF", type=["pdf"])
 
 if uploaded_file is not None:
     try:
-        reader = pypdf.PdfReader(uploaded_file)
+        # قراءة النص باستخدام pdfplumber للحفاظ على الترتيب العربي الصحيح
         full_text = ""
-        for page in reader.pages:
-            t = page.extract_text()
-            if t:
-                full_text += t + "\n"
+        with pdfplumber.open(uploaded_file) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text()
+                if text:
+                    full_text += text + "\n"
 
-        # 1. استخراج التواريخ وترتيبها (من القديم للجديد)
+        # 1. استخراج التواريخ وترتيبها تصاعدياً
         raw_dates = re.findall(r'\b\d{2}-\d{2}-\d{4}\b', full_text)
         period_str = ""
         if len(raw_dates) >= 2:
@@ -28,25 +29,27 @@ if uploaded_file is not None:
         elif len(raw_dates) == 1:
             period_str = f"بتاريخ {raw_dates[0]}"
 
-        # 2. استخراج الأسطر بناءً على وجود الأرقام والمعادلات الرياضية
+        # 2. البحث الدقيق عن سطر البيان التفصيلي الحسابي فقط
         lines = full_text.split('\n')
-        detail_parts = []
+        target_lines = []
 
         for line in lines:
             clean = line.strip()
-            # التقاط أي سطر فيه أرقام وبجواره علامة ضرب (*) أو (×) أو حرف (ج) أو أقواس المرتجع
-            if re.search(r'\d+(\.\d+)?\s*[\*×ج]', clean) or "(" in clean:
-                # استبعاد أسطر الهوامش والجداول الإجمالية والتواريخ
-                if not any(x in clean for x in ["صفحة", "توقيع", "توزيع", "الإجمالي", "من", "إلى", "SA", "SR"]):
-                    if not re.search(r'\b\d{2}-\d{2}-\d{4}\b', clean):
-                        detail_parts.append(clean)
+            
+            # التقاط السطور التي تحتوي على عملية حسابية (خصم/مرتجع + أرقام + أسعار)
+            if any(k in clean for k in ["خصم", "مرتجع", "ESTAR", "ع21", "ع18", "سادة"]) and ("جم" in clean or "ج" in clean or "×" in clean):
+                # استبعاد جدول المتوسطات والهوامش والجداول الإجمالية
+                if not any(ignore in clean for ignore in ["متوسط", "توزيع", "صفحة", "المندوب", "جدول", "إجمالي", "أيام", "شريحة", "توقيع", "استقطاعات", "دفع"]):
+                    target_lines.append(clean)
 
-        combined = " و".join(detail_parts)
+        combined = " و".join(target_lines)
 
-        # 3. ضبط تنسيق الأرقام والضرب
+        # 3. ضبط تنسيق الضرب والرموز
+        combined = re.sub(r'ج\s*([\d\.]+)\s*\*?\s*جم\s*([\d\.]+)', r'\2*\1ج', combined)
+        combined = re.sub(r'ج\s*([\d\.]+)\s*×\s*جم\s*([\d\.]+)', r'\2*\1ج', combined)
         combined = combined.replace(" × ", "*").replace(" جم", "").replace(" ج", "ج")
 
-        # النتيجة النهائية
+        # النتيجة النهائية الصافية
         final_result = f"{combined} {period_str}".strip()
 
         st.subheader("📌 القيد المستخرج:")
