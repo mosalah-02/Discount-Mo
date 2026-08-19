@@ -18,7 +18,7 @@ if uploaded_file is not None:
             if t:
                 full_text += t + "\n"
 
-        # 1. استخراج التواريخ وترتيبها من القديم للجديد
+        # 1. استخراج التواريخ وترتيبها صح (من القديم للجديد)
         raw_dates = re.findall(r'\b\d{2}-\d{2}-\d{4}\b', full_text)
         period_str = ""
         if len(raw_dates) >= 2:
@@ -28,24 +28,23 @@ if uploaded_file is not None:
         elif len(raw_dates) == 1:
             period_str = f"بتاريخ {raw_dates[0]}"
 
-        # 2. استخراج أسطر البيان التفصيلي مباشرة بدون الاعتماد على كلمة "البيان التفصيلي"
-        details_lines = []
+        # 2. استخراج الأسطر التي تحتوي على معادلات الحسابات فقط (أرقام × أسعار)
         lines = full_text.split('\n')
+        clean_entry_parts = []
 
         for line in lines:
             clean = line.strip()
-            # التقاط السطور التي تحتوي على معادلات الجرامات والأسعار (خصم / مرتجع / جم / ج / ×)
-            if any(k in clean for k in ["خصم", "مرتجع", "ESTAR", "ع21", "ع18", "جم ×", "جم*"]):
-                # استبعاد أسطر المتوسطات والجدول المختصر وعناوين الفروع
-                if not any(x in clean for x in ["متوسط", "توزيع", "صفحة", "المندوب", "جدول", "إجمالي"]):
-                    details_lines.append(clean)
+            # النمط المضمون: سطر يحتوي على أرقام مضروبة في أسعار أو أوزان مثل (195.75 أو 10ج أو ×)
+            if re.search(r'\d+(\.\d+)?\s*(×|\*|ج|جم)', clean) or "مرتجع" in clean:
+                # استبعاد أسطر العناوين والجداول ومتوسطات الأسعار
+                if not any(x in clean for x in ["متوسط", "توزيع", "صفحة", "المندوب", "جدول", "إجمالي", "أيام", "شريحة", "توقيع", "استقطاعات", "بيانات"]):
+                    clean_entry_parts.append(clean)
 
-        # دمج التفاصيل
-        combined = " و".join(details_lines)
-        combined = combined.replace(" × ", "*").replace(" جم", "").replace(" ج", "ج")
+        # تنظيف وتنسيق النص المجمع
+        entry_text = " و".join(clean_entry_parts)
+        entry_text = entry_text.replace(" × ", "*").replace(" جم", "").replace(" ج", "ج")
 
-        # تركيب القيد النهائي
-        final_result = f"{combined} {period_str}".strip()
+        final_result = f"{entry_text} {period_str}".strip()
 
         st.subheader("📌 القيد المستخرج:")
         st.code(final_result, language=None)
