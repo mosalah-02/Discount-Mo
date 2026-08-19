@@ -18,7 +18,7 @@ if uploaded_file is not None:
             if t:
                 full_text += t + "\n"
 
-        # 1. استخراج التواريخ وترتيبها تصاعدياً (من القديم إلى الجديد)
+        # 1. استخراج التواريخ وترتيبها من القديم للجديد
         raw_dates = re.findall(r'\b\d{2}-\d{2}-\d{4}\b', full_text)
         period_str = ""
         if len(raw_dates) >= 2:
@@ -28,31 +28,23 @@ if uploaded_file is not None:
         elif len(raw_dates) == 1:
             period_str = f"بتاريخ {raw_dates[0]}"
 
-        # 2. التخطي المباشر للبيان المختصر والبدء فقط من "البيان التفصيلي"
+        # 2. استخراج أسطر البيان التفصيلي مباشرة بدون الاعتماد على كلمة "البيان التفصيلي"
         details_lines = []
         lines = full_text.split('\n')
-        capture = False
 
         for line in lines:
             clean = line.strip()
-            
-            # بدء التجميع فقط بعد العثور على عنوان البيان التفصيلي
-            if "البيان التفصيلي" in clean or "جرامات × نسبة" in clean:
-                capture = True
-                continue
-            
-            if capture:
-                # التوقف فور الوصول لجدول توزيع الخصم أو نهاية الصفحة
-                if "توزيع الخصم" in clean or "الإجمالي" in clean or "توقيع" in clean:
-                    break
-                # استبعاد الأرقام الفردية (رقم الصفحة أو السطر) والأسطر الفارغة
-                if clean and not clean.isdigit():
+            # التقاط السطور التي تحتوي على معادلات الجرامات والأسعار (خصم / مرتجع / جم / ج / ×)
+            if any(k in clean for k in ["خصم", "مرتجع", "ESTAR", "ع21", "ع18", "جم ×", "جم*"]):
+                # استبعاد أسطر المتوسطات والجدول المختصر وعناوين الفروع
+                if not any(x in clean for x in ["متوسط", "توزيع", "صفحة", "المندوب", "جدول", "إجمالي"]):
                     details_lines.append(clean)
 
-        # دمج الأسطر وتنظيف الصيغة
+        # دمج التفاصيل
         combined = " و".join(details_lines)
         combined = combined.replace(" × ", "*").replace(" جم", "").replace(" ج", "ج")
 
+        # تركيب القيد النهائي
         final_result = f"{combined} {period_str}".strip()
 
         st.subheader("📌 القيد المستخرج:")
