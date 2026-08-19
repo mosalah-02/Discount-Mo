@@ -18,7 +18,7 @@ if uploaded_file is not None:
             if t:
                 full_text += t + "\n"
 
-        # 1. استخراج التواريخ وترتيبها صح (من القديم للجديد)
+        # 1. استخراج التواريخ وترتيبها من القديم للجديد
         raw_dates = re.findall(r'\b\d{2}-\d{2}-\d{4}\b', full_text)
         period_str = ""
         if len(raw_dates) >= 2:
@@ -28,25 +28,29 @@ if uploaded_file is not None:
         elif len(raw_dates) == 1:
             period_str = f"بتاريخ {raw_dates[0]}"
 
-        # 2. استخراج وسحب أسطر الخصومات فقط
+        # 2. تجميع أسطر الخصم التفصيلية واستبعاد جدول المتوسطات
         lines = full_text.split('\n')
-        details = []
+        detail_parts = []
+
         for line in lines:
             clean = line.strip()
-            if any(k in clean for k in ["خصم", "مرتجع", "ESTAR", "ع21", "ع18", "سادة"]) and ("جم" in clean or "ج" in clean or "×" in clean):
-                if not any(x in clean for x in ["متوسط", "توزيع", "صفحة", "ملخص", "جدول", "توقيع"]):
-                    details.append(clean)
+            # التقاط السطور التي تحتوي على عملية حسابية (وزن × سعر) أو مرتجع
+            if ("خصم" in clean or "مرتجع" in clean) and ("جم" in clean or "ج" in clean or "×" in clean):
+                # استبعاد أسطر المتوسطات والجدول المختصر والعناوين
+                if not any(x in clean for x in ["متوسط", "توزيع", "صفحة", "ملخص", "جدول", "توقيع", "الممنوح"]):
+                    detail_parts.append(clean)
 
-        combined = " و".join(details)
+        combined = " و".join(detail_parts)
 
-        # 3. تعديل الاتجاهات والرموز المعكوسة
-        # إصلاح النمط المعكوس (ج 13.5*جم 114.90) ليصبح (114.90*13.5ج)
+        # 3. إصلاح ترتيب النصوص المعكوسة
+        combined = re.sub(r'ج\s*([\d\.]+)\s*\*?\s*ﺟﻢ\s*([\d\.]+)', r'\2*\1ج', combined)
         combined = re.sub(r'ج\s*([\d\.]+)\s*\*?\s*جم\s*([\d\.]+)', r'\2*\1ج', combined)
         combined = re.sub(r'ج\s*([\d\.]+)\s*×\s*جم\s*([\d\.]+)', r'\2*\1ج', combined)
-        
-        # تنظيف عام للرموز الزائدة
+
+        # تنظيف عام
         combined = combined.replace(" × ", "*").replace(" جم", "").replace(" ج", "ج")
 
+        # النتيجة النهائية
         final_result = f"{combined} {period_str}".strip()
 
         st.subheader("📌 القيد المستخرج:")
