@@ -18,7 +18,7 @@ if uploaded_file is not None:
             if t:
                 full_text += t + "\n"
 
-        # 1. استخراج التواريخ وترتيبها من القديم للجديد
+        # 1. استخراج التواريخ وترتيبها (من القديم للجديد)
         raw_dates = re.findall(r'\b\d{2}-\d{2}-\d{4}\b', full_text)
         period_str = ""
         if len(raw_dates) >= 2:
@@ -28,26 +28,22 @@ if uploaded_file is not None:
         elif len(raw_dates) == 1:
             period_str = f"بتاريخ {raw_dates[0]}"
 
-        # 2. تجميع أسطر الخصم التفصيلية واستبعاد جدول المتوسطات
+        # 2. استخراج الأسطر بناءً على وجود الأرقام والمعادلات الرياضية
         lines = full_text.split('\n')
         detail_parts = []
 
         for line in lines:
             clean = line.strip()
-            # التقاط السطور التي تحتوي على عملية حسابية (وزن × سعر) أو مرتجع
-            if ("خصم" in clean or "مرتجع" in clean) and ("جم" in clean or "ج" in clean or "×" in clean):
-                # استبعاد أسطر المتوسطات والجدول المختصر والعناوين
-                if not any(x in clean for x in ["متوسط", "توزيع", "صفحة", "ملخص", "جدول", "توقيع", "الممنوح"]):
-                    detail_parts.append(clean)
+            # التقاط أي سطر فيه أرقام وبجواره علامة ضرب (*) أو (×) أو حرف (ج) أو أقواس المرتجع
+            if re.search(r'\d+(\.\d+)?\s*[\*×ج]', clean) or "(" in clean:
+                # استبعاد أسطر الهوامش والجداول الإجمالية والتواريخ
+                if not any(x in clean for x in ["صفحة", "توقيع", "توزيع", "الإجمالي", "من", "إلى", "SA", "SR"]):
+                    if not re.search(r'\b\d{2}-\d{2}-\d{4}\b', clean):
+                        detail_parts.append(clean)
 
         combined = " و".join(detail_parts)
 
-        # 3. إصلاح ترتيب النصوص المعكوسة
-        combined = re.sub(r'ج\s*([\d\.]+)\s*\*?\s*ﺟﻢ\s*([\d\.]+)', r'\2*\1ج', combined)
-        combined = re.sub(r'ج\s*([\d\.]+)\s*\*?\s*جم\s*([\d\.]+)', r'\2*\1ج', combined)
-        combined = re.sub(r'ج\s*([\d\.]+)\s*×\s*جم\s*([\d\.]+)', r'\2*\1ج', combined)
-
-        # تنظيف عام
+        # 3. ضبط تنسيق الأرقام والضرب
         combined = combined.replace(" × ", "*").replace(" جم", "").replace(" ج", "ج")
 
         # النتيجة النهائية
