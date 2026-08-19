@@ -28,23 +28,26 @@ if uploaded_file is not None:
         elif len(raw_dates) == 1:
             period_str = f"بتاريخ {raw_dates[0]}"
 
-        # 2. استخراج الأسطر التي تحتوي على معادلات الحسابات فقط (أرقام × أسعار)
+        # 2. استخراج وسحب أسطر الخصومات فقط
         lines = full_text.split('\n')
-        clean_entry_parts = []
-
+        details = []
         for line in lines:
             clean = line.strip()
-            # النمط المضمون: سطر يحتوي على أرقام مضروبة في أسعار أو أوزان مثل (195.75 أو 10ج أو ×)
-            if re.search(r'\d+(\.\d+)?\s*(×|\*|ج|جم)', clean) or "مرتجع" in clean:
-                # استبعاد أسطر العناوين والجداول ومتوسطات الأسعار
-                if not any(x in clean for x in ["متوسط", "توزيع", "صفحة", "المندوب", "جدول", "إجمالي", "أيام", "شريحة", "توقيع", "استقطاعات", "بيانات"]):
-                    clean_entry_parts.append(clean)
+            if any(k in clean for k in ["خصم", "مرتجع", "ESTAR", "ع21", "ع18", "سادة"]) and ("جم" in clean or "ج" in clean or "×" in clean):
+                if not any(x in clean for x in ["متوسط", "توزيع", "صفحة", "ملخص", "جدول", "توقيع"]):
+                    details.append(clean)
 
-        # تنظيف وتنسيق النص المجمع
-        entry_text = " و".join(clean_entry_parts)
-        entry_text = entry_text.replace(" × ", "*").replace(" جم", "").replace(" ج", "ج")
+        combined = " و".join(details)
 
-        final_result = f"{entry_text} {period_str}".strip()
+        # 3. تعديل الاتجاهات والرموز المعكوسة
+        # إصلاح النمط المعكوس (ج 13.5*جم 114.90) ليصبح (114.90*13.5ج)
+        combined = re.sub(r'ج\s*([\d\.]+)\s*\*?\s*جم\s*([\d\.]+)', r'\2*\1ج', combined)
+        combined = re.sub(r'ج\s*([\d\.]+)\s*×\s*جم\s*([\d\.]+)', r'\2*\1ج', combined)
+        
+        # تنظيف عام للرموز الزائدة
+        combined = combined.replace(" × ", "*").replace(" جم", "").replace(" ج", "ج")
+
+        final_result = f"{combined} {period_str}".strip()
 
         st.subheader("📌 القيد المستخرج:")
         st.code(final_result, language=None)
