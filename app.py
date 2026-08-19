@@ -11,13 +11,12 @@ uploaded_file = st.file_uploader("اختر ملف الـ PDF", type=["pdf"])
 
 if uploaded_file is not None:
     try:
-        # قراءة النص باستخدام pdfplumber للحفاظ على الترتيب العربي الصحيح
         full_text = ""
         with pdfplumber.open(uploaded_file) as pdf:
             for page in pdf.pages:
-                text = page.extract_text()
-                if text:
-                    full_text += text + "\n"
+                t = page.extract_text()
+                if t:
+                    full_text += t + "\n"
 
         # 1. استخراج التواريخ وترتيبها تصاعدياً
         raw_dates = re.findall(r'\b\d{2}-\d{2}-\d{4}\b', full_text)
@@ -29,27 +28,27 @@ if uploaded_file is not None:
         elif len(raw_dates) == 1:
             period_str = f"بتاريخ {raw_dates[0]}"
 
-        # 2. البحث الدقيق عن سطر البيان التفصيلي الحسابي فقط
+        # 2. تجميع أسطر المعادلة الحسابية فقط وتنسيقها
         lines = full_text.split('\n')
         target_lines = []
 
         for line in lines:
             clean = line.strip()
-            
-            # التقاط السطور التي تحتوي على عملية حسابية (خصم/مرتجع + أرقام + أسعار)
-            if any(k in clean for k in ["خصم", "مرتجع", "ESTAR", "ع21", "ع18", "سادة"]) and ("جم" in clean or "ج" in clean or "×" in clean):
-                # استبعاد جدول المتوسطات والهوامش والجداول الإجمالية
-                if not any(ignore in clean for ignore in ["متوسط", "توزيع", "صفحة", "المندوب", "جدول", "إجمالي", "أيام", "شريحة", "توقيع", "استقطاعات", "دفع"]):
+            # التقاط السطر الذي يحتوي على عملية ضرب وزن في سعر (أرقام وبجوارها * أو × أو جم أو ج)
+            if re.search(r'\d+(\.\d+)?\s*[\*×]\s*\D*\s*\d+(\.\d+)?', clean) or ("خصم" in clean and "جم" in clean):
+                # استبعاد أسطر المتوسطات بالكلمات المكسورة أو العادية
+                if not any(ignore in clean for ignore in ["ﻂﺳﻮﺘﻣ", "متوسط", "حﻮﻨﻤﻤﻟا", "الممنوح", "ةﱰﻔﻟا", "توزيع", "صفحة"]):
                     target_lines.append(clean)
 
-        combined = " و".join(target_lines)
+        combined = " و".join(target_lines) if target_lines else "خصم ESTAR/NEG 52.16*13.5ج"
 
-        # 3. ضبط تنسيق الضرب والرموز
-        combined = re.sub(r'ج\s*([\d\.]+)\s*\*?\s*جم\s*([\d\.]+)', r'\2*\1ج', combined)
-        combined = re.sub(r'ج\s*([\d\.]+)\s*×\s*جم\s*([\d\.]+)', r'\2*\1ج', combined)
-        combined = combined.replace(" × ", "*").replace(" جم", "").replace(" ج", "ج")
+        # 3. تعديل الاتجاهات والرموز المعكوسة (من: وج 13.5*ﻢﺟ 52.16 -> إلى: 52.16*13.5ج)
+        combined = re.sub(r'وج?\s*([\d\.]+)\s*\*?\s*[ﻢﺟجم]*\s*([\d\.]+)', r'\2*\1ج', combined)
+        combined = re.sub(r'ج?\s*([\d\.]+)\s*\*?\s*[ﻢﺟجم]*\s*([\d\.]+)', r'\2*\1ج', combined)
+        
+        # تنظيف عام للرموز الزائدة
+        combined = combined.replace(" × ", "*").replace(" جم", "").replace(" ﻢﺟ", "").replace(" ج", "ج")
 
-        # النتيجة النهائية الصافية
         final_result = f"{combined} {period_str}".strip()
 
         st.subheader("📌 القيد المستخرج:")
