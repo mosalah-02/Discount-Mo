@@ -4,49 +4,60 @@ import pandas as pd
 import re
 import io
 
-st.title("استخراج بيانات الخصومات إلى Excel 📊")
+st.title("استخراج قيد الخصومات إلى Excel 📊")
 
 uploaded_file = st.file_uploader("ارفع ملف الـ PDF هنا", type=["pdf"])
 
 if uploaded_file is not None:
-    # 1. قراءة جميع صفحات الـ PDF
     reader = pypdf.PdfReader(uploaded_file)
     full_text = ""
     for page in reader.pages:
         full_text += page.extract_text() + "\n"
     
-    # 2. استخراج التواريخ وتعديل ترتيبها (القديم ثم الجديد)
+    # 1. استخراج التواريخ بدقة وضبط الاتجاه (من - إلى)
     dates = re.findall(r'\b\d{2}-\d{2}-\d{4}\b', full_text)
     period_str = ""
     if len(dates) >= 2:
-        # ترتيب التواريخ تصاعدياً لضمان بداية الفترة قبل نهايتها
-        sorted_dates = sorted(list(set(dates)))
-        period_str = f"فترة من {sorted_dates[0]} حتى {sorted_dates[-1]}"
+        # أخذ تاريخ البداية والنهاية وتنسيقهم
+        period_str = f"فترة من {dates[0]} حتى {dates[1]}"
     elif len(dates) == 1:
         period_str = f"بتاريخ {dates[0]}"
         
-    # 3. استخراج تفاصيل الخصم كاملة
+    # 2. تحديد مكان "البيان التفصيلي" وقراءة الأسطر التابعة له فقط
     lines = full_text.split('\n')
-    details = []
+    details_lines = []
+    capture = False
     
-    # البحث عن الأسطر التي تحتوي على تفاصيل الجرامات والأسعار
     for line in lines:
-        line_clean = line.strip()
-        if any(keyword in line_clean for keyword in ["خصم", "مرتجع", "احجار", "ESTAR", "ع21", "ع18", "سادة"]):
-            # استبعاد الأسطر العامة أو العناوين
-            if not any(ignore in line_clean for ignore in ["جدول", "توزيع الخصم", "ملخص الخصومات", "صفحة"]):
-                details.append(line_clean)
+        clean = line.strip()
+        # بداية التجميع من عنوان البيان التفصيلي
+        if "البيان التفصيلي" in clean or "جرامات × نسبة" in clean:
+            capture = True
+            continue
+        
+        if capture:
+            # التوقف عند الوصول للجدول التالي مباشرة
+            if "توزيع الخصم" in clean or "الإجمالي" in clean or "صفحة" in clean:
+                break
+            if clean and not clean.startswith("1") and not clean.startswith("2"):
+                details_lines.append(clean)
                 
-    # دمج التفاصيل المجمعة
-    detailed_text = " و".join(details) if details else "لم يتم تحديد تفاصيل الخصم"
-    final_result = f"{detailed_text} {period_str}".strip()
+    # 3. دمج النصوص لتكوين القيد المطلوب
+    combined_details = " و".join(details_lines)
     
-    # 4. عرض النتيجة وتحميل الإكسيل
-    st.success("تم استخراج البيانات بنجاح!")
-    st.write("**النص المستخرج النهائي:**")
-    st.info(final_result)
+    # تحسين تنسيق العلامات لتطابق القيد الحسابي (تنسيق الضرب والخصم)
+    combined_details = combined_details.replace(" × ", "*").replace(" جم", "").replace(" ج", "ج")
     
-    df = pd.DataFrame([{"البيان التفصيلي": final_result}])
+    # القيد النهائي المطلوب
+    final_entry = f"{combined_details} {period_str}".strip()
+    
+    # عرض القيد الناتج وتحميله
+    st.success("تم استخراج القيد بنجاح!")
+    st.write("**القيد المستخرج:**")
+    st.info(final_entry)
+    
+    # حفظ في إكسيل
+    df = pd.DataFrame([{"القيد التفصيلي": final_entry}])
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
         df.to_excel(writer, index=False)
@@ -54,6 +65,6 @@ if uploaded_file is not None:
     st.download_button(
         label="📥 تحميل ملف Excel",
         data=buffer.getvalue(),
-        file_name="extracted_data.xlsx",
+        file_name="discount_entry.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
