@@ -1,6 +1,5 @@
 import streamlit as st
-from google import genai
-from google.genai import types
+import google.generativeai as genai
 
 st.title("📋 استخراج قيد الخصومات البصري")
 st.write("ارفع ملف الـ PDF لقراءة البيان بصرياً واستخراج القيد بدقة 100%")
@@ -10,16 +9,20 @@ api_key = st.secrets.get("GEMINI_API_KEY")
 if not api_key:
     st.error("يرجى إضافة GEMINI_API_KEY في إعدادات Secrets لموقع Streamlit.")
 else:
-    client = genai.Client(api_key=api_key)
+    genai.configure(api_key=api_key)
     uploaded_file = st.file_uploader("ارفع ملف الـ PDF هنا", type=["pdf"])
 
     if uploaded_file is not None:
         with st.spinner("جاري قراءة الـ PDF بصرياً واستخراج القيد..."):
             try:
-                # 1. قراءة الـ PDF كملف ثنائي
+                # 1. تجهيز الملف كـ Part ثنائي لـ Gemini
                 pdf_bytes = uploaded_file.read()
+                pdf_part = {
+                    "mime_type": "application/pdf",
+                    "data": pdf_bytes
+                }
 
-                # 2. النص التوجيهي
+                # 2. التعليمات المباشرة
                 prompt = """
                 أنت مساعد محاسبي متخصص. اقرأ صفحات هذا الملف بصرياً واستخرج قيد الخصومات المكتوب تحت جدول "البيان التفصيلي (جرامات × نسبة)".
 
@@ -35,17 +38,9 @@ else:
                 خصم احجار ع21 114.90*13.5ج وخصم احجار ع18 165.16*18.5ج وخصم ESTAR/NEG 52.16*13.5ج وخصم ع21 سادة 4.06*8.5ج فترة من 25-05-2026 حتى 24-06-2026
                 """
 
-                # تجهيز الملف لـ Gemini
-                pdf_part = types.Part.from_bytes(
-                    data=pdf_bytes,
-                    mime_type="application/pdf"
-                )
-
-                # الاستدعاء الصحيح للـ API مع الموديل المعتمد
-                response = client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=[prompt, pdf_part]
-                )
+                # 3. تشغيل الموديل المستقر والرسمي
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                response = model.generate_content([prompt, pdf_part])
 
                 final_result = response.text.strip()
 
