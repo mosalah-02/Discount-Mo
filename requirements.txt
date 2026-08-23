@@ -1,4 +1,2 @@
 streamlit
-pdfplumber
-arabic-reshaper
-python-bidi
+google-genai
