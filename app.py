@@ -17,12 +17,12 @@ if uploaded_file is not None:
                     if t:
                         full_text += t + "\n"
 
-            # 1. استخراج التواريخ وترتيبها تصاعدياً (من القديم للجديد)
+            # 1. استخراج التواريخ وترتيبها تصاعدياً
             raw_dates = re.findall(r'\b\d{2}-\d{2}-\d{4}\b|\b\d{4}-\d{2}-\d{2}\b', full_text)
             formatted_dates = []
             for d in raw_dates:
                 parts = re.split(r'[-/]', d)
-                if len(parts[0]) == 4: # صيغة YYYY-MM-DD
+                if len(parts[0]) == 4:
                     formatted_dates.append(f"{parts[2]}-{parts[1]}-{parts[0]}")
                 else:
                     formatted_dates.append(d)
@@ -35,38 +35,38 @@ if uploaded_file is not None:
             elif len(formatted_dates) == 1:
                 period_str = f"بتاريخ {formatted_dates[0]}"
 
-            # 2. البحث عن سطر البيان التفصيلي الحقيقي داخل الملف
+            # 2. قراءة كل الأسطر المحصورة تحت "البيان التفصيلي"
             lines = full_text.split('\n')
             detail_lines = []
             capture = False
 
-            for i, line in enumerate(lines):
+            for line in lines:
                 clean = line.strip()
-                # بداية منطقة البيان التفصيلي
+                
                 if "البيان التفصيلي" in clean:
                     capture = True
+                    # لو السطر نفسه فيه كلام بعد الكلمة ياخده
+                    after_title = clean.split("البيان التفصيلي")[-1].replace("(جرامات × نسبة)", "").strip()
+                    if after_title and len(after_title) > 3:
+                        detail_lines.append(after_title)
                     continue
-                # نهاية المنطقة عند الوصول لتوزيع الخصم أو الهوامش
-                if capture and any(stop in clean for stop in ["توزيع الخصم", "الإجمالي", "صافي الخصم", "صفحة"]):
-                    capture = False
 
-                if capture and clean:
-                    # فلترة السطور التي تحتوي على تفاصيل الخصم أو المرتجع أو الإلغاء
-                    if any(k in clean for k in ["خصم", "مرتجع", "إلغاء", "الغاء", "ع18", "ع21", "ESTAR", "سادة"]):
+                if capture:
+                    # التوقف عند بداية جدول جديد
+                    if any(stop in clean for stop in ["توزيع الخصم", "الإجمالي", "صافي الخصم", "صفحة", "توقيع"]):
+                        capture = False
+                        break
+                    if clean:
                         detail_lines.append(clean)
 
-            # تنظيف وتنسيق السطور المستخرجة
+            # تنظيف وتنسيق السطور
             clean_items = []
             for item in detail_lines:
-                # إزالة الكلمات الزائدة وتنسيق الضرب والرموز
                 formatted = item.replace(" × ", "*").replace(" جم", "").replace(" ج", "ج")
                 if formatted not in clean_items:
                     clean_items.append(formatted)
 
-            if clean_items:
-                combined_entry = " و".join(clean_items)
-            else:
-                combined_entry = "لا يوجد خصومات مستحقة (صافي الخصم 0.00)"
+            combined_entry = " و".join(clean_items) if clean_items else "لا يوجد بيان تفصيلي"
 
             final_result = f"{combined_entry} {period_str}".strip()
 
