@@ -15,27 +15,14 @@ else:
     if uploaded_file is not None:
         with st.spinner("جاري قراءة الـ PDF بصرياً واستخراج القيد..."):
             try:
-                # 1. البحث التلقائي عن الموديل المتاح في حسابك
-                available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                
-                # اختيار أفضل موديل متاح للـ PDF
-                chosen_model = None
-                for preferred in ['models/gemini-2.5-flash', 'models/gemini-1.5-flash', 'models/gemini-2.5-pro']:
-                    if preferred in available_models:
-                        chosen_model = preferred
-                        break
-                
-                if not chosen_model and available_models:
-                    chosen_model = available_models[0]
-
-                # 2. تجهيز الـ PDF
+                # 1. تجهيز الـ PDF
                 pdf_bytes = uploaded_file.read()
                 pdf_part = {
                     "mime_type": "application/pdf",
                     "data": pdf_bytes
                 }
 
-                # 3. النص التوجيهي المحاسبي
+                # 2. النص التوجيهي المحاسبي
                 prompt = """
                 أنت مساعد محاسبي متخصص. اقرأ صفحات هذا الملف بصرياً واستخرج قيد الخصومات المكتوب تحت جدول "البيان التفصيلي (جرامات × نسبة)".
 
@@ -51,7 +38,8 @@ else:
                 خصم احجار ع21 114.90*13.5ج وخصم احجار ع18 165.16*18.5ج وخصم ESTAR/NEG 52.16*13.5ج وخصم ع21 سادة 4.06*8.5ج فترة من 25-05-2026 حتى 24-06-2026
                 """
 
-                model = genai.GenerativeModel(chosen_model)
+                # 3. تشغيل الموديل المعتمد والمطلوب بحسابك
+                model = genai.GenerativeModel('gemini-2.5-flash')
                 response = model.generate_content([prompt, pdf_part])
 
                 final_result = response.text.strip()
