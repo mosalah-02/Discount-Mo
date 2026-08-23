@@ -16,10 +16,10 @@ else:
     if uploaded_file is not None:
         with st.spinner("جاري قراءة الـ PDF بصرياً واستخراج القيد..."):
             try:
-                # 1. تجهيز الـ PDF كملف ثنائي لإرساله مباشرة
+                # 1. قراءة الـ PDF كملف ثنائي
                 pdf_bytes = uploaded_file.read()
 
-                # 2. التوجيه المحاسبي المباشر
+                # 2. النص التوجيهي
                 prompt = """
                 أنت مساعد محاسبي متخصص. اقرأ صفحات هذا الملف بصرياً واستخرج قيد الخصومات المكتوب تحت جدول "البيان التفصيلي (جرامات × نسبة)".
 
@@ -35,15 +35,15 @@ else:
                 خصم احجار ع21 114.90*13.5ج وخصم احجار ع18 165.16*18.5ج وخصم ESTAR/NEG 52.16*13.5ج وخصم ع21 سادة 4.06*8.5ج فترة من 25-05-2026 حتى 24-06-2026
                 """
 
-                # إرسال ملف الـ PDF المباشر كـ Part بصري
+                # تجهيز الملف لـ Gemini
                 pdf_part = types.Part.from_bytes(
                     data=pdf_bytes,
                     mime_type="application/pdf"
                 )
 
-                # اسم الموديل المستقر والرسمي
+                # الاستدعاء الصحيح للـ API مع الموديل المعتمد
                 response = client.models.generate_content(
-                    model='gemini-2.5-flash',
+                    model="gemini-2.5-flash",
                     contents=[prompt, pdf_part]
                 )
 
