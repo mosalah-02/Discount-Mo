@@ -1,78 +1,59 @@
 import streamlit as st
-from google import genai
-import pypdf
-from fpdf import FPDF
+import pdfplumber
+import re
+import arabic_reshaper
+from bidi.algorithm import get_display
 
-st.title("📋 استخراج وتحويل قيد الخصومات")
-st.write("ارفع ملف الـ PDF للحصول على القيد جاهز للنسخ أو كملف PDF جديد")
+st.title("📋 استخراج قيد الخصومات")
+st.write("ارفع ملف الـ PDF للحصول على القيد جاهز للنسخ فوراً بدون حاجة لـ API")
 
-api_key = st.secrets.get("GEMINI_API_KEY")
+uploaded_file = st.file_uploader("ارفع ملف الـ PDF هنا", type=["pdf"])
 
-if not api_key:
-    st.error("يرجى إضافة GEMINI_API_KEY في إعدادات Secrets لموقع Streamlit.")
-else:
-    client = genai.Client(api_key=api_key)
-    uploaded_file = st.file_uploader("ارفع ملف الـ PDF هنا", type=["pdf"])
-
-    if uploaded_file is not None:
-        with st.spinner("جاري معالجة الملف واستخراج البيانات..."):
-            try:
-                # 1. قراءة الـ PDF الأصلي
-                reader = pypdf.PdfReader(uploaded_file)
-                full_text = ""
-                for page in reader.pages:
+if uploaded_file is not None:
+    with st.spinner("جاري قراءة واستخراج البيانات..."):
+        try:
+            full_text = ""
+            with pdfplumber.open(uploaded_file) as pdf:
+                for page in pdf.pages:
                     t = page.extract_text()
                     if t:
                         full_text += t + "\n"
 
-                # 2. التوجيه المباشر للذكاء الاصطناعي
-                prompt = f"""
-                أنت مساعد محاسبي متخصص. استخرج من النص التالي قيد الخصومات المطلوبة فقط بدون أي مقدمات أو شرح.
+            # 1. استخراج التواريخ وترتيبها من القديم للجديد
+            raw_dates = re.findall(r'\b\d{2}-\d{2}-\d{4}\b', full_text)
+            period_str = ""
+            if len(raw_dates) >= 2:
+                unique_dates = list(set(raw_dates))
+                unique_dates.sort(key=lambda d: [int(x) for x in d.split('-')[::-1]])
+                period_str = f"فترة من {unique_dates[0]} حتى {unique_dates[-1]}"
+            elif len(raw_dates) == 1:
+                period_str = f"بتاريخ {raw_dates[0]}"
 
-                المشار إليها بالتعليمات التالية:
-                1. اقرأ واكتب السطور التي تقع أسفل جملة: "البيان التفصيلي (جرامات × نسبة)".
-                2. يجب أن تحتوي الجمل المستخرجة على الكلمات والرموز الحسابية (جم، ج، ×، خصم، مرتجع).
-                3. نسّق كل سطر ليكون بالشكل المحاسبي التالي: (اسم الخصم الوزن*السعرج).
-                4. أضف الفترات الزمنية المذكورة في نهاية القيد لتصبح: (فترة من DD-MM-YYYY حتى DD-MM-YYYY) مع ترتيب التاريخ القديم أولاً ثم الجديد.
-                5. الغِ واستبعد تماماً أي أسطر عامة أو جداول إجمالية أو هوامش أخرى.
+            # 2. استخراج الأسطر التي تحتوي على أرقام وأسعار (البيان التفصيلي)
+            lines = full_text.split('\n')
+            extracted_items = []
 
-                مثال للنتيجة المطلوبة بالضبط:
-                خصم احجار ع21 114.90*13.5ج وخصم احجار ع18 165.16*18.5ج وخصم ESTAR/NEG 52.16*13.5ج وخصم ع21 سادة 4.06*8.5ج فترة من 25-05-2026 حتى 24-06-2026
+            for line in lines:
+                clean = line.strip()
+                # البحث عن الأسطر التي تحتوي على عمليات حسابية للخصومات
+                if any(k in clean for k in ["خصم", "مرتجع", "ESTAR", "ع21", "ع18", "سادة", "احجار"]) or re.search(r'\d+(\.\d+)?\s*[\*×]', clean):
+                    # استبعاد أسطر المتوسطات والجداول الإجمالية والهوامش
+                    if not any(ignore in clean for ignore in ["متوسط", "توزيع", "صفحة", "المندوب", "جدول", "إجمالي", "أيام", "شريحة", "توقيع", "استقطاعات", "دفع"]):
+                        extracted_items.append(clean)
 
-                النص المراد تحليله:
-                {full_text}
-                """
+            combined_entry = " و".join(extracted_items)
 
-                response = client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=prompt
-                )
+            # 3. ضبط وتصحيح الاتجاهات والرموز المقلوبة
+            # تصحيح النمط: ج 13.5*جم 114.90 ليكون: 114.90*13.5ج
+            combined_entry = re.sub(r'ج?\s*([\d\.]+)\s*\*?\s*[جمﻢﺟ]*\s*([\d\.]+)', r'\2*\1ج', combined_entry)
+            combined_entry = combined_entry.replace(" × ", "*").replace(" جم", "").replace(" ﻢﺟ", "").replace(" ج", "ج")
 
-                final_result = response.text.strip()
+            # النتيجة النهائية
+            final_result = f"{combined_entry} {period_str}".strip()
 
-                # 3. عرض النتيجة للنسخ
-                st.subheader("📌 القيد المستخرج:")
-                st.code(final_result, language=None)
+            st.subheader("📌 القيد المستخرج:")
+            st.code(final_result, language=None)
+            st.success("تم استخراج القيد بنجاح! اضغط على آيقونة النسخ (📋) بالزاوية العلوية لمربع النص لنسخه.")
 
-                # 4. إنشاء ملف PDF جديد
-                pdf = FPDF()
-                pdf.add_page()
-                pdf.set_font("Arial", size=14)
-                
-                pdf.cell(200, 10, txt="Discount Entry Statement", ln=1, align='C')
-                pdf.ln(10)
-                pdf.multi_cell(0, 10, txt=final_result)
-
-                pdf_output = bytes(pdf.output())
-
-                st.download_button(
-                    label="📄 تحميل القيد كملف PDF جديد",
-                    data=pdf_output,
-                    file_name="Discount_Entry.pdf",
-                    mime="application/pdf"
-                )
-
-                st.success("تمت المعالجة بنجاح!")
-
-            except Exception as e:
-                st.error(f"حدث خطأ أثناء معالجة الملف: {e}")
+        except Exception as e:
+            st.error(f"حدث خطأ أثناء معالجة الملف: {e}")
