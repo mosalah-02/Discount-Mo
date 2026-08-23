@@ -3,12 +3,12 @@ import pdfplumber
 import re
 
 st.title("📋 استخراج قيد الخصومات")
-st.write("ارفع ملف الـ PDF للحصول على القيد جاهز للنسخ فوراً")
+st.write("ارفع ملف الـ PDF للحصول على القيد التفصيلي الحقيقي فوراً")
 
 uploaded_file = st.file_uploader("ارفع ملف الـ PDF هنا", type=["pdf"])
 
 if uploaded_file is not None:
-    with st.spinner("جاري استخراج البيانات وتصحيح النص..."):
+    with st.spinner("جاري استخراج بيانات الملف..."):
         try:
             full_text = ""
             with pdfplumber.open(uploaded_file) as pdf:
@@ -17,47 +17,56 @@ if uploaded_file is not None:
                     if t:
                         full_text += t + "\n"
 
-            # 1. استخراج التواريخ وترتيبها من القديم للجديد
-            raw_dates = re.findall(r'\b\d{2}-\d{2}-\d{4}\b', full_text)
+            # 1. استخراج التواريخ وترتيبها تصاعدياً (من القديم للجديد)
+            raw_dates = re.findall(r'\b\d{2}-\d{2}-\d{4}\b|\b\d{4}-\d{2}-\d{2}\b', full_text)
+            formatted_dates = []
+            for d in raw_dates:
+                parts = re.split(r'[-/]', d)
+                if len(parts[0]) == 4: # صيغة YYYY-MM-DD
+                    formatted_dates.append(f"{parts[2]}-{parts[1]}-{parts[0]}")
+                else:
+                    formatted_dates.append(d)
+
             period_str = ""
-            if len(raw_dates) >= 2:
-                unique_dates = list(set(raw_dates))
-                unique_dates.sort(key=lambda d: [int(x) for x in d.split('-')[::-1]])
+            if len(formatted_dates) >= 2:
+                unique_dates = list(set(formatted_dates))
+                unique_dates.sort(key=lambda x: [int(i) for i in x.split('-')[::-1]])
                 period_str = f"فترة من {unique_dates[0]} حتى {unique_dates[-1]}"
-            elif len(raw_dates) == 1:
-                period_str = f"بتاريخ {raw_dates[0]}"
+            elif len(formatted_dates) == 1:
+                period_str = f"بتاريخ {formatted_dates[0]}"
 
-            # 2. استخراج البنود الأساسية وتجنب التكرار
+            # 2. البحث عن سطر البيان التفصيلي الحقيقي داخل الملف
             lines = full_text.split('\n')
-            extracted_items = []
+            detail_lines = []
+            capture = False
 
-            for line in lines:
+            for i, line in enumerate(lines):
                 clean = line.strip()
-                
-                if "114.9" in clean or "0*114.9" in clean:
-                    item = "خصم احجار ع21 114.90*13.5ج"
-                    if item not in extracted_items:
-                        extracted_items.append(item)
-                        
-                elif "165.1" in clean or "6*165.1" in clean:
-                    item = "خصم احجار ع18 165.16*18.5ج"
-                    if item not in extracted_items:
-                        extracted_items.append(item)
-                        
-                elif "52.1" in clean or "6*52.1" in clean:
-                    item = "خصم ESTAR/NEG 52.16*13.5ج"
-                    if item not in extracted_items:
-                        extracted_items.append(item)
-                        
-                elif "4.0" in clean or "6*4.0" in clean:
-                    item = "خصم ع21 سادة 4.06*8.5ج"
-                    if item not in extracted_items:
-                        extracted_items.append(item)
+                # بداية منطقة البيان التفصيلي
+                if "البيان التفصيلي" in clean:
+                    capture = True
+                    continue
+                # نهاية المنطقة عند الوصول لتوزيع الخصم أو الهوامش
+                if capture and any(stop in clean for stop in ["توزيع الخصم", "الإجمالي", "صافي الخصم", "صفحة"]):
+                    capture = False
 
-            if extracted_items:
-                combined_entry = " و".join(extracted_items)
+                if capture and clean:
+                    # فلترة السطور التي تحتوي على تفاصيل الخصم أو المرتجع أو الإلغاء
+                    if any(k in clean for k in ["خصم", "مرتجع", "إلغاء", "الغاء", "ع18", "ع21", "ESTAR", "سادة"]):
+                        detail_lines.append(clean)
+
+            # تنظيف وتنسيق السطور المستخرجة
+            clean_items = []
+            for item in detail_lines:
+                # إزالة الكلمات الزائدة وتنسيق الضرب والرموز
+                formatted = item.replace(" × ", "*").replace(" جم", "").replace(" ج", "ج")
+                if formatted not in clean_items:
+                    clean_items.append(formatted)
+
+            if clean_items:
+                combined_entry = " و".join(clean_items)
             else:
-                combined_entry = "خصم احجار ع21 114.90*13.5ج وخصم احجار ع18 165.16*18.5ج وخصم ESTAR/NEG 52.16*13.5ج وخصم ع21 سادة 4.06*8.5ج"
+                combined_entry = "لا يوجد خصومات مستحقة (صافي الخصم 0.00)"
 
             final_result = f"{combined_entry} {period_str}".strip()
 
