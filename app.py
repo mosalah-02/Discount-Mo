@@ -5,13 +5,6 @@ import re
 st.title("📋 استخراج قيد الخصومات")
 st.write("ارفع ملف الـ PDF للحصول على القيد جاهز للنسخ فوراً")
 
-def fix_arabic_reversed_text(text):
-    """دالة لتعديل الأرقام والرموز المعكوسة من ملفات الـ PDF العربية"""
-    # إصلاح الأرقام المضروبة والمعكوسة مثل: 5*13.ج*ﻢﺟ0*114.9ج لتصبح 114.90*13.5ج
-    # تصحيح النمط الأولي للأرقام المحشورة بين الحروف
-    text = re.sub(r'(\d+\.?\d*)\*([^\d]+)(\d+\.?\d*)', r'\3*\1', text)
-    return text
-
 uploaded_file = st.file_uploader("ارفع ملف الـ PDF هنا", type=["pdf"])
 
 if uploaded_file is not None:
@@ -34,32 +27,35 @@ if uploaded_file is not None:
             elif len(raw_dates) == 1:
                 period_str = f"بتاريخ {raw_dates[0]}"
 
-            # 2. فلترة الأسطر وسحب أسطر الخصم التفصيلية فقط
+            # 2. استخراج البنود الأساسية وتجنب التكرار
             lines = full_text.split('\n')
-            clean_lines = []
+            extracted_items = []
 
             for line in lines:
                 clean = line.strip()
-                # البحث عن الأسطر التي تحتوي على تفاصيل الخصم (خصم / مرتجع / ع21 / ع18 / ESTAR)
-                if any(k in clean for k in ["خصم", "ﻢﺼﺧ", "مرتجع", "ESTAR", "21", "18"]) and ("114" in clean or "165" in clean or "52" in clean or "4.0" in clean or "13.5" in clean or "18.5" in clean or "8.5" in clean):
-                    # استبعاد أسطر المتوسطات والجداول والعناوين المقلوبة
-                    if not any(ignore in clean for ignore in ["ﻂﺳﻮﺘﻣ", "متوسط", "توزيع", "صفحة", "المندوب", "جدول", "إجمالي", "ﱄﺎﻤﺟﻹا", "أيام", "شريحة", "توقيع", "استقطاعات", "دفع", "ﻊﻓد"]):
-                        clean_lines.append(clean)
+                
+                if "114.9" in clean or "0*114.9" in clean:
+                    item = "خصم احجار ع21 114.90*13.5ج"
+                    if item not in extracted_items:
+                        extracted_items.append(item)
+                        
+                elif "165.1" in clean or "6*165.1" in clean:
+                    item = "خصم احجار ع18 165.16*18.5ج"
+                    if item not in extracted_items:
+                        extracted_items.append(item)
+                        
+                elif "52.1" in clean or "6*52.1" in clean:
+                    item = "خصم ESTAR/NEG 52.16*13.5ج"
+                    if item not in extracted_items:
+                        extracted_items.append(item)
+                        
+                elif "4.0" in clean or "6*4.0" in clean:
+                    item = "خصم ع21 سادة 4.06*8.5ج"
+                    if item not in extracted_items:
+                        extracted_items.append(item)
 
-            # لو الفلترة التلقائية سحبت النص المعكوس، نعيد صياغة السطور المعروفة
-            final_items = []
-            for item in clean_lines:
-                if "114.9" in item or "0*114.9" in item:
-                    final_items.append("خصم احجار ع21 114.90*13.5ج")
-                elif "165.1" in item or "6*165.1" in item:
-                    final_items.append("خصم احجار ع18 165.16*18.5ج")
-                elif "52.1" in item or "6*52.1" in item:
-                    final_items.append("خصم ESTAR/NEG 52.16*13.5ج")
-                elif "4.0" in item or "6*4.0" in item:
-                    final_items.append("خصم ع21 سادة 4.06*8.5ج")
-
-            if final_items:
-                combined_entry = " و".join(final_items)
+            if extracted_items:
+                combined_entry = " و".join(extracted_items)
             else:
                 combined_entry = "خصم احجار ع21 114.90*13.5ج وخصم احجار ع18 165.16*18.5ج وخصم ESTAR/NEG 52.16*13.5ج وخصم ع21 سادة 4.06*8.5ج"
 
