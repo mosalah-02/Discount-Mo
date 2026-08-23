@@ -41,6 +41,7 @@ else:
                     mime_type="application/pdf"
                 )
 
+                # استخدام اسم الموديل المعتمد رسميًا
                 response = client.models.generate_content(
                     model='gemini-2.5-flash',
                     contents=[prompt, pdf_part]
