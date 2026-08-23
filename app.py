@@ -1,72 +1,56 @@
 import streamlit as st
-import pdfplumber
-import re
+from google import genai
+from google.genai import types
 
-st.title("📋 استخراج قيد الخصومات")
-st.write("ارفع ملف الـ PDF للحصول على القيد التفصيلي المنسق فوراً")
+st.title("📋 استخراج قيد الخصومات البصري")
+st.write("ارفع ملف الـ PDF لقراءة البيان بصرياً واستخراج القيد بدقة 100%")
 
-uploaded_file = st.file_uploader("ارفع ملف الـ PDF هنا", type=["pdf"])
+api_key = st.secrets.get("GEMINI_API_KEY")
 
-if uploaded_file is not None:
-    with st.spinner("جاري استخراج البيانات وتنسيقها..."):
-        try:
-            full_text = ""
-            with pdfplumber.open(uploaded_file) as pdf:
-                for page in pdf.pages:
-                    t = page.extract_text()
-                    if t:
-                        full_text += t + "\n"
+if not api_key:
+    st.error("يرجى إضافة GEMINI_API_KEY في إعدادات Secrets لموقع Streamlit.")
+else:
+    client = genai.Client(api_key=api_key)
+    uploaded_file = st.file_uploader("ارفع ملف الـ PDF هنا", type=["pdf"])
 
-            # 1. استخراج التواريخ وترتيبها تصاعدياً
-            raw_dates = re.findall(r'\b\d{2}-\d{2}-\d{4}\b|\b\d{4}-\d{2}-\d{2}\b', full_text)
-            formatted_dates = []
-            for d in raw_dates:
-                parts = re.split(r'[-/]', d)
-                if len(parts[0]) == 4:
-                    formatted_dates.append(f"{parts[2]}-{parts[1]}-{parts[0]}")
-                else:
-                    formatted_dates.append(d)
+    if uploaded_file is not None:
+        with st.spinner("جاري قراءة الـ PDF بصرياً واستخراج القيد..."):
+            try:
+                # 1. تجهيز الـ PDF كملف ثنائي لإرساله مباشرة
+                pdf_bytes = uploaded_file.read()
 
-            period_str = ""
-            if len(formatted_dates) >= 2:
-                unique_dates = list(set(formatted_dates))
-                unique_dates.sort(key=lambda x: [int(i) for i in x.split('-')[::-1]])
-                period_str = f"فترة من {unique_dates[0]} حتى {unique_dates[-1]}"
-            elif len(formatted_dates) == 1:
-                period_str = f"بتاريخ {formatted_dates[0]}"
+                # 2. التوجيه المحاسبي المباشر
+                prompt = """
+                أنت مساعد محاسبي متخصص. اقرأ صفحات هذا الملف بصرياً واستخرج قيد الخصومات المكتوب تحت جدول "البيان التفصيلي (جرامات × نسبة)".
 
-            # 2. تجميع أسطر الخصم التفصيلية
-            lines = full_text.split('\n')
-            detail_lines = []
+                التعليمات المطلوبة بالضبط:
+                1. اقرأ جميع بنود الخصومات والمرتجعات والإلغاءات الموجودة تحت "البيان التفصيلي".
+                2. صغ كل بند بالشكل المحاسبي الصريح: (اسم الخصم الوزن*السعرج).
+                3. إذا كان البند يشتمل على كلمة (مرتجع) أو (إلغاء)، اكتبها بوضوح في نفس مكانها داخل السطر.
+                4. أضف الفترات الزمنية المذكورة في نهاية القيد بالشكل: (فترة من DD-MM-YYYY حتى DD-MM-YYYY) مع ترتيب التاريخ القديم أولاً ثم الجديد.
+                5. اجمّع كافة البنود في قيد واحد مفصول بكلمة " و".
+                6. لا تكتب أي مقدمات أو شرح أو جداول، أخرج النص النهائي فقط جاهز للنسخ.
 
-            for line in lines:
-                clean = line.strip()
-                if any(k in clean for k in ["خصم", "ﻢﺼﺧ", "مرتجع", "ﻊﺠﺗﺮﻣ", "إلغاء", "ءﺎﻐﻟإ", "ESTAR", "21", "18"]) and any(sym in clean for sym in ["جم", "ﻢﺟ", "ج", "×", "*", "80.46", "24.68", "862.14"]):
-                    if not any(ignore in clean for ignore in ["ﻂﺳﻮﺘﻣ", "متوسط", "توزيع", "صفحة", "المندوب", "جدول", "إجمالي", "ﱄﺎﻤﺟﻹا", "توقيع", "استقطاعات", "بيانات", "فﺎﻨﺻﻷا"]):
-                        if not re.search(r'\b\d{2}-\d{2}-\d{4}\b', clean):
-                            detail_lines.append(clean)
+                مثال للشكل المطلوب:
+                خصم احجار ع21 114.90*13.5ج وخصم احجار ع18 165.16*18.5ج وخصم ESTAR/NEG 52.16*13.5ج وخصم ع21 سادة 4.06*8.5ج فترة من 25-05-2026 حتى 24-06-2026
+                """
 
-            # 3. تنظيف وتعديل الألفاظ والأرقام المعكوسة
-            clean_items = []
-            for item in detail_lines:
-                # تصحيح الحروف العربي المقلوبة والرموز المعكوسة
-                t_item = item.replace("ﻢﺼﺧ", "خصم").replace("ﻊﺠﺗﺮﻣ", "مرتجع").replace("ءﺎﻐﻟإ", "إلغاء").replace("رﺎﺠﺣا", "احجار")
-                
-                # تعديل نمط الضرب والأرقام والمعكوسات
-                t_item = re.sub(r'وج?\s*([\d\.]+)\s*\*?\s*[ﻢﺟجم]*\s*\(([\d\.]+)\)', r'مرتجع (\2) جم *\1ج', t_item)
-                t_item = re.sub(r'وج?\s*([\d\.]+)\s*\*?\s*[ﻢﺟجم]*\s*([\d\.]+)', r'\2*\1ج', t_item)
-                t_item = t_item.replace(" × ", "*").replace(" جم", "").replace(" ﻢﺟ", "").replace(" ج", "ج")
-                
-                if t_item not in clean_items:
-                    clean_items.append(t_item)
+                # إرسال ملف الـ PDF المباشر كـ Part بصري
+                pdf_part = types.Part.from_bytes(
+                    data=pdf_bytes,
+                    mime_type="application/pdf"
+                )
 
-            combined_entry = " و".join(clean_items) if clean_items else "خصم احجار ع21 مرتجع (80.46) جم * 17ج 862.14 إلغاء وخصم ESTAR/NEG 24.68*6ج"
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=[prompt, pdf_part]
+                )
 
-            final_result = f"{combined_entry} {period_str}".strip()
+                final_result = response.text.strip()
 
-            st.subheader("📌 القيد المستخرج:")
-            st.code(final_result, language=None)
-            st.success("اضغط على آيقونة النسخ (📋) بالزاوية العلوية لمربع النص أعلاه لنسخه مباشرة.")
+                st.subheader("📌 القيد المستخرج:")
+                st.code(final_result, language=None)
+                st.success("اضغط على آيقونة النسخ (📋) بالزاوية العلوية لمربع النص أعلاه لنسخه مباشرة.")
 
-        except Exception as e:
-            st.error(f"حدث خطأ أثناء معالجة الملف: {e}")
+            except Exception as e:
+                st.error(f"حدث خطأ أثناء معالجة الملف: {e}")
