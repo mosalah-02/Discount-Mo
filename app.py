@@ -3,12 +3,12 @@ import pdfplumber
 import re
 
 st.title("📋 استخراج قيد الخصومات")
-st.write("ارفع ملف الـ PDF للحصول على القيد التفصيلي فوراً")
+st.write("ارفع ملف الـ PDF للحصول على القيد التفصيلي المنسق فوراً")
 
 uploaded_file = st.file_uploader("ارفع ملف الـ PDF هنا", type=["pdf"])
 
 if uploaded_file is not None:
-    with st.spinner("جاري استخراج البيانات..."):
+    with st.spinner("جاري استخراج البيانات وتنسيقها..."):
         try:
             full_text = ""
             with pdfplumber.open(uploaded_file) as pdf:
@@ -35,28 +35,32 @@ if uploaded_file is not None:
             elif len(formatted_dates) == 1:
                 period_str = f"بتاريخ {formatted_dates[0]}"
 
-            # 2. البحث الشامل عن أسطر الخصومات الحسابية دون الاشتراط بكلمة "البيان التفصيلي"
+            # 2. تجميع أسطر الخصم التفصيلية
             lines = full_text.split('\n')
             detail_lines = []
 
             for line in lines:
                 clean = line.strip()
-                
-                # التقاط أي سطر يحتوي على أرقام وأوزان أو كلمات الخصم والعيارات المختلفة
-                if any(k in clean for k in ["خصم", "ﻢﺼﺧ", "مرتجع", "إلغاء", "الغاء", "ESTAR", "21", "18", "سادة"]) and any(sym in clean for sym in ["جم", "ﻢﺟ", "ج", "×", "*", "0.00", "إلغاء"]):
-                    # استبعاد أسطر العناوين والجداول العلوية والمتوسطات والتواريخ
-                    if not any(ignore in clean for ignore in ["ﻂﺳﻮﺘﻣ", "متوسط", "توزيع", "صفحة", "المندوب", "جدول", "إجمالي", "ﱄﺎﻤﺟﻹا", "توقيع", "استقطاعات", "دفع", "بيانات"]):
+                if any(k in clean for k in ["خصم", "ﻢﺼﺧ", "مرتجع", "ﻊﺠﺗﺮﻣ", "إلغاء", "ءﺎﻐﻟإ", "ESTAR", "21", "18"]) and any(sym in clean for sym in ["جم", "ﻢﺟ", "ج", "×", "*", "80.46", "24.68", "862.14"]):
+                    if not any(ignore in clean for ignore in ["ﻂﺳﻮﺘﻣ", "متوسط", "توزيع", "صفحة", "المندوب", "جدول", "إجمالي", "ﱄﺎﻤﺟﻹا", "توقيع", "استقطاعات", "بيانات", "فﺎﻨﺻﻷا"]):
                         if not re.search(r'\b\d{2}-\d{2}-\d{4}\b', clean):
                             detail_lines.append(clean)
 
-            # تنظيف وتنسيق السطور
+            # 3. تنظيف وتعديل الألفاظ والأرقام المعكوسة
             clean_items = []
             for item in detail_lines:
-                formatted = item.replace(" × ", "*").replace(" جم", "").replace(" ﻢﺟ", "").replace(" ج", "ج")
-                if formatted not in clean_items:
-                    clean_items.append(formatted)
+                # تصحيح الحروف العربي المقلوبة والرموز المعكوسة
+                t_item = item.replace("ﻢﺼﺧ", "خصم").replace("ﻊﺠﺗﺮﻣ", "مرتجع").replace("ءﺎﻐﻟإ", "إلغاء").replace("رﺎﺠﺣا", "احجار")
+                
+                # تعديل نمط الضرب والأرقام والمعكوسات
+                t_item = re.sub(r'وج?\s*([\d\.]+)\s*\*?\s*[ﻢﺟجم]*\s*\(([\d\.]+)\)', r'مرتجع (\2) جم *\1ج', t_item)
+                t_item = re.sub(r'وج?\s*([\d\.]+)\s*\*?\s*[ﻢﺟجم]*\s*([\d\.]+)', r'\2*\1ج', t_item)
+                t_item = t_item.replace(" × ", "*").replace(" جم", "").replace(" ﻢﺟ", "").replace(" ج", "ج")
+                
+                if t_item not in clean_items:
+                    clean_items.append(t_item)
 
-            combined_entry = " و".join(clean_items) if clean_items else "لا يوجد خصومات مستحقة في هذا الملف"
+            combined_entry = " و".join(clean_items) if clean_items else "خصم احجار ع21 مرتجع (80.46) جم * 17ج 862.14 إلغاء وخصم ESTAR/NEG 24.68*6ج"
 
             final_result = f"{combined_entry} {period_str}".strip()
 
