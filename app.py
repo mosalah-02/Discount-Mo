@@ -3,12 +3,12 @@ import pdfplumber
 import re
 
 st.title("📋 استخراج قيد الخصومات")
-st.write("ارفع ملف الـ PDF للحصول على القيد التفصيلي الحقيقي فوراً")
+st.write("ارفع ملف الـ PDF للحصول على القيد التفصيلي فوراً")
 
 uploaded_file = st.file_uploader("ارفع ملف الـ PDF هنا", type=["pdf"])
 
 if uploaded_file is not None:
-    with st.spinner("جاري استخراج بيانات الملف..."):
+    with st.spinner("جاري استخراج البيانات..."):
         try:
             full_text = ""
             with pdfplumber.open(uploaded_file) as pdf:
@@ -35,38 +35,28 @@ if uploaded_file is not None:
             elif len(formatted_dates) == 1:
                 period_str = f"بتاريخ {formatted_dates[0]}"
 
-            # 2. قراءة كل الأسطر المحصورة تحت "البيان التفصيلي"
+            # 2. البحث الشامل عن أسطر الخصومات الحسابية دون الاشتراط بكلمة "البيان التفصيلي"
             lines = full_text.split('\n')
             detail_lines = []
-            capture = False
 
             for line in lines:
                 clean = line.strip()
                 
-                if "البيان التفصيلي" in clean:
-                    capture = True
-                    # لو السطر نفسه فيه كلام بعد الكلمة ياخده
-                    after_title = clean.split("البيان التفصيلي")[-1].replace("(جرامات × نسبة)", "").strip()
-                    if after_title and len(after_title) > 3:
-                        detail_lines.append(after_title)
-                    continue
-
-                if capture:
-                    # التوقف عند بداية جدول جديد
-                    if any(stop in clean for stop in ["توزيع الخصم", "الإجمالي", "صافي الخصم", "صفحة", "توقيع"]):
-                        capture = False
-                        break
-                    if clean:
-                        detail_lines.append(clean)
+                # التقاط أي سطر يحتوي على أرقام وأوزان أو كلمات الخصم والعيارات المختلفة
+                if any(k in clean for k in ["خصم", "ﻢﺼﺧ", "مرتجع", "إلغاء", "الغاء", "ESTAR", "21", "18", "سادة"]) and any(sym in clean for sym in ["جم", "ﻢﺟ", "ج", "×", "*", "0.00", "إلغاء"]):
+                    # استبعاد أسطر العناوين والجداول العلوية والمتوسطات والتواريخ
+                    if not any(ignore in clean for ignore in ["ﻂﺳﻮﺘﻣ", "متوسط", "توزيع", "صفحة", "المندوب", "جدول", "إجمالي", "ﱄﺎﻤﺟﻹا", "توقيع", "استقطاعات", "دفع", "بيانات"]):
+                        if not re.search(r'\b\d{2}-\d{2}-\d{4}\b', clean):
+                            detail_lines.append(clean)
 
             # تنظيف وتنسيق السطور
             clean_items = []
             for item in detail_lines:
-                formatted = item.replace(" × ", "*").replace(" جم", "").replace(" ج", "ج")
+                formatted = item.replace(" × ", "*").replace(" جم", "").replace(" ﻢﺟ", "").replace(" ج", "ج")
                 if formatted not in clean_items:
                     clean_items.append(formatted)
 
-            combined_entry = " و".join(clean_items) if clean_items else "لا يوجد بيان تفصيلي"
+            combined_entry = " و".join(clean_items) if clean_items else "لا يوجد خصومات مستحقة في هذا الملف"
 
             final_result = f"{combined_entry} {period_str}".strip()
 
